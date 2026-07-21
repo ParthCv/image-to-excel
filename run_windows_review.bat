@@ -26,6 +26,6 @@ if "%PHOTO%"=="" (
   exit /b 1
 )
 
-python main.py "%PHOTO%"
+python main.py "%PHOTO%" --review
 echo.
 pause

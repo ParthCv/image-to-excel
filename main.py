@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 main.py  --  Freezer box grid photo  ->  Excel (.xlsx)
 
@@ -34,27 +32,24 @@ import argparse
 import numpy as np
 import cv2
 
-EXPECTED_ROWS = 10          # these forms are pre-printed 10x10. Empty cells are
-EXPECTED_COLS = 10          # still ruled cells. Anything else = detection failure.
-GRID_TOLERANCE = 1          # allow detecting EXPECTED +/- this before refusing
-MAX_SPACING_CV = 0.15       # rule spacing coefficient-of-variation above this = refuse
-WORK_RES = 1600             # longest side is downscaled to this for line-finding
+EXPECTED_ROWS = 10          
+EXPECTED_COLS = 10          
+GRID_TOLERANCE = 1          
+MAX_SPACING_CV = 0.15       
+WORK_RES = 1600             
 
-ID_RE = re.compile(r"^[A-Z]{3}-\d{1,4}$")          # AGM-2, MAT-65
+ID_RE = re.compile(r"^[A-Z]{3}-\d{1,4}$")          
 TYPES = {"DNA", "RNA"}
-MODIFIER_RE = re.compile(r"^[A-Z]{2,3}(-[A-Z]{2})?$")  # PB, MB-CP, MB-CR
+MODIFIER_RE = re.compile(r"^[A-Z]{2,3}(-[A-Z]{2})?$")  
 
-BLANK_TOKEN = "(blank)"     # literal string written into empty cells (matches example.xlsx)
+BLANK_TOKEN = "(blank)"     
 
-# ink fraction thresholds for blank-vs-written (measured on the 5 real photos:
-# blanks 0.019-0.038, lightest written 0.076). The band between is "uncertain".
 INK_BLANK_MAX = 0.045
 INK_WRITTEN_MIN = 0.065
 
-# EasyOCR only ever needs these characters. Constraining the alphabet is free accuracy.
 OCR_ALLOWLIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-. "
 
-OCR_CONF_FLAG = 0.45        # below this confidence -> flag the cell
+OCR_CONF_FLAG = 0.45        
 
 def _downscale(gray):
     h, w = gray.shape
@@ -63,20 +58,17 @@ def _downscale(gray):
         return cv2.resize(gray, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA), s
     return gray, 1.0
 
-
 def _order_pts(p):
     r = np.zeros((4, 2), dtype="float32")
     s = p.sum(1)
     d = np.diff(p, axis=1)
-    r[0] = p[np.argmin(s)]   # top-left
-    r[2] = p[np.argmax(s)]   # bottom-right
-    r[1] = p[np.argmin(d)]   # top-right
-    r[3] = p[np.argmax(d)]   # bottom-left
+    r[0] = p[np.argmin(s)]   
+    r[2] = p[np.argmax(s)]   
+    r[1] = p[np.argmin(d)]   
+    r[3] = p[np.argmax(d)]   
     return r
 
-
 def _line_mask(gray, w, h):
-    """Binary mask of long horizontal + vertical ruled lines. Morphology only."""
     thr = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
                                 cv2.THRESH_BINARY_INV, 25, 10)
     hk = cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, w // 40), 1))
@@ -85,9 +77,7 @@ def _line_mask(gray, w, h):
     vert = cv2.dilate(cv2.erode(thr, vk), vk)
     return horiz | vert
 
-
 def _find_table_quad(gray):
-    """Largest rectangular blob of ruled lines -> its 4 corners."""
     h, w = gray.shape
     lines = cv2.dilate(_line_mask(gray, w, h), np.ones((3, 3), np.uint8), iterations=2)
     cnts, _ = cv2.findContours(lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -99,9 +89,7 @@ def _find_table_quad(gray):
     approx = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
     if len(approx) == 4:
         return approx.reshape(4, 2).astype("float32")
-    # imperfect border (holes punched, rotation) -> min-area rectangle
     return cv2.boxPoints(cv2.minAreaRect(c)).astype("float32")
-
 
 def _warp(gray, quad):
     r = _order_pts(quad)
@@ -112,10 +100,7 @@ def _warp(gray, quad):
         r, np.array([[0, 0], [W - 1, 0], [W - 1, H - 1], [0, H - 1]], dtype="float32"))
     return cv2.warpPerspective(gray, M, (W, H))
 
-
 def _tight_crop(warped):
-    """Trim the warp down to the box of actual ruled-line activity (kills the
-    blank paper margin a loose outer contour tends to grab)."""
     h, w = warped.shape
     thr = cv2.adaptiveThreshold(warped, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
                                 cv2.THRESH_BINARY_INV, 25, 10)
@@ -131,9 +116,7 @@ def _tight_crop(warped):
         return warped
     return warped[ry[0]:ry[-1] + 1, cx[0]:cx[-1] + 1]
 
-
 def _peaks(proj, expected, span):
-    """Line positions = strongest local maxima, min-separated by expected spacing."""
     proj = proj.astype(float)
     proj = proj / (proj.max() + 1e-9)
     minsep = int(span / (expected + 3))
@@ -143,7 +126,6 @@ def _peaks(proj, expected, span):
         if all(abs(i - k) >= minsep for k in keep):
             keep.append(i)
     return sorted(keep)
-
 
 def _grid_lines(warped):
     h, w = warped.shape
@@ -157,20 +139,16 @@ def _grid_lines(warped):
     cols = _peaks(vm.sum(0), EXPECTED_COLS, w)
     return rows, cols
 
-
 def _spacing_cv(lines):
     if len(lines) < 3:
         return 9.9
     d = np.diff(lines)
     return float(np.std(d) / (np.mean(d) + 1e-9))
 
-
 class GridError(Exception):
-    """Raised when the grid can't be confirmed. We refuse rather than emit a wrong grid."""
-
+    pass
 
 def detect_grid(bgr):
-    """photo -> (warped_gray_table, row_lines, col_lines). Refuses if uncertain."""
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
     small, _ = _downscale(gray)
     quad = _find_table_quad(small)
@@ -196,36 +174,25 @@ def detect_grid(bgr):
             "Grid lines are too irregular (row cv={:.3f}, col cv={:.3f}) to trust.\n"
             "        Retake the photo flatter / less angled.".format(rcv, ccv))
 
-    # snap to exactly EXPECTED lines if we're at tolerance edge, using uniform spacing
     rows = _uniform(rows, EXPECTED_ROWS + 1)
     cols = _uniform(cols, EXPECTED_COLS + 1)
     return warped, rows, cols
 
-
 def _uniform(lines, n):
-    """Force exactly n evenly spaced boundaries between the outer two detected lines.
-    Safe because real rule spacing is near-perfectly uniform (measured cv <= 0.016)."""
     if len(lines) == n:
         return lines
     lo, hi = lines[0], lines[-1]
     return [int(round(lo + (hi - lo) * i / (n - 1))) for i in range(n)]
 
-
-# ----------------------------------------------------------------------------
-# 2. CELLS  --  crop, decide blank-vs-written before OCR ever runs
-# ----------------------------------------------------------------------------
-
 def _ink_fraction(cell):
     thr = cv2.adaptiveThreshold(cell, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
                                 cv2.THRESH_BINARY_INV, 15, 8)
     h, w = thr.shape
-    m = int(0.12 * min(h, w))  # ignore rule borders bleeding into the crop
+    m = int(0.12 * min(h, w))  
     inner = thr[m:h - m, m:w - m] if h > 2 * m and w > 2 * m else thr
     return float((inner > 0).mean())
 
-
 def extract_cells(warped, rows, cols):
-    """Returns grid[r][c] = dict(crop=gray, ink=float, state='blank'|'written'|'uncertain')."""
     grid = []
     for ri in range(len(rows) - 1):
         line = []
@@ -249,25 +216,19 @@ def extract_cells(warped, rows, cols):
         grid.append(line)
     return grid
 
-
 class Recognizer:
-    """Wraps EasyOCR. Imported lazily so grid detection never pays the torch cost."""
-
     def __init__(self, use_gpu=None):
-        import easyocr  # heavy import happens only when we actually OCR
+        import easyocr  
         if use_gpu is None:
             use_gpu = _cuda_available()
-        # EasyOCR downloads its weights on first construction, then caches them.
         self.reader = easyocr.Reader(["en"], gpu=use_gpu, verbose=False)
 
     def read_lines(self, crop):
-        """Return list of (text, confidence) top-to-bottom for one cell crop."""
         if crop is None or crop.size == 0:
             return []
         up = cv2.resize(crop, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         results = self.reader.readtext(
             up, detail=1, paragraph=False, allowlist=OCR_ALLOWLIST)
-        # sort by vertical position (top of bounding box)
         results.sort(key=lambda r: min(p[1] for p in r[0]))
         out = []
         for box, text, conf in results:
@@ -276,7 +237,6 @@ class Recognizer:
                 out.append((t, float(conf)))
         return out
 
-
 def _cuda_available():
     try:
         import torch
@@ -284,23 +244,24 @@ def _cuda_available():
     except Exception:
         return False
 
-
 class Cell:
-    __slots__ = ("id", "modifier", "type", "raw", "flags")
+    __slots__ = ("id", "modifier", "type", "raw", "flags", "crop", "row", "col")
 
-    def __init__(self):
+    def __init__(self, crop=None, row=0, col=0):
         self.id = ""
         self.modifier = ""
         self.type = ""
         self.raw = []
         self.flags = []
+        self.crop = crop
+        self.row = row
+        self.col = col
 
     @property
     def is_blank(self):
         return not (self.id or self.modifier or self.type or self.raw)
 
     def value(self):
-        """The exact string written into the xlsx cell."""
         if self.is_blank:
             return BLANK_TOKEN
         idline = self.id if self.id else "?"
@@ -309,15 +270,11 @@ class Cell:
         typ = self.type if self.type else ""
         return idline + ("\n" + typ if typ else "")
 
-
 def _clean_id(tok):
-    # common OCR confusions ONLY normalized structurally, never content-guessed
     t = tok.replace(" ", "").upper()
     return t
 
-
 def assemble_cell(lines):
-    """lines = [(text, conf), ...] -> Cell with flags. No correction, only flags."""
     cell = Cell()
     cell.raw = list(lines)
     if not lines:
@@ -326,7 +283,6 @@ def assemble_cell(lines):
     texts = [t for t, _ in lines]
     confs = [c for _, c in lines]
 
-    # find the type line (DNA/RNA) among the recognised lines
     type_idx = None
     for i, t in enumerate(texts):
         if t in TYPES:
@@ -337,7 +293,6 @@ def assemble_cell(lines):
     else:
         cell.flags.append("no clear DNA/RNA line")
 
-    # the ID line = first non-type line
     id_line = None
     for i, t in enumerate(texts):
         if i == type_idx:
@@ -346,8 +301,6 @@ def assemble_cell(lines):
         break
 
     if id_line is not None:
-        parts = id_line.split("-")
-        # try to split "PRC-14MB-CP" style: ID is first AAA-#### match, rest = modifier
         m = re.match(r"^([A-Z]{3}-\d{1,4})(.*)$", id_line)
         if m:
             cell.id = m.group(1)
@@ -357,7 +310,6 @@ def assemble_cell(lines):
         else:
             cell.id = _clean_id(id_line)
 
-    # ---- flags (attention, not correction) ----
     if cell.id and not ID_RE.match(cell.id):
         cell.flags.append("ID '{}' doesn't match AAA-#### pattern".format(cell.id))
     if cell.modifier and not MODIFIER_RE.match(cell.modifier):
@@ -372,10 +324,7 @@ def assemble_cell(lines):
         cell.flags.append("low OCR confidence ({:.2f})".format(min(confs)))
     return cell
 
-
 def vocab_flags(grid_cells):
-    """Aliquots come in runs (AGM-2 x4). An ID appearing once that is one edit from
-    an ID appearing several times is probably a misread. Flag only -- never merge."""
     from collections import Counter
     ids = [c.id for row in grid_cells for c in row if c.id and ID_RE.match(c.id)]
     counts = Counter(ids)
@@ -388,7 +337,6 @@ def vocab_flags(grid_cells):
                     c.flags.append("ID '{}' is 1 edit from '{}' (seen {}x) - misread?"
                                    .format(c.id, near[0], counts[near[0]]))
     return grid_cells
-
 
 def _lev(a, b):
     if a == b:
@@ -404,7 +352,6 @@ def _lev(a, b):
         prev = cur
     return prev[-1]
 
-
 def _read_grid(bgr, recognizer, on_progress=None):
     warped, rows, cols = detect_grid(bgr)
     cells_meta = extract_cells(warped, rows, cols)
@@ -414,12 +361,15 @@ def _read_grid(bgr, recognizer, on_progress=None):
     for ri, row in enumerate(cells_meta):
         line = []
         for ci, meta in enumerate(row):
-            cell = Cell()
             if meta["state"] == "blank":
+                cell = Cell(crop=meta["crop"], row=ri, col=ci)
                 line.append(cell)
                 continue
             lines = recognizer.read_lines(meta["crop"])
             cell = assemble_cell(lines)
+            cell.crop = meta["crop"]
+            cell.row = ri
+            cell.col = ci
             if meta["state"] == "uncertain":
                 cell.flags.append("ink level ambiguous (blank or faint?) -- verify")
             line.append(cell)
@@ -429,13 +379,10 @@ def _read_grid(bgr, recognizer, on_progress=None):
         out.append(line)
     return out
 
-
 def _regex_hits(grid):
     return sum(1 for row in grid for c in row if c.id and ID_RE.match(c.id))
 
-
 def process_image(path, recognizer, on_progress=None):
-    """Full pipeline. Tries both orientations, keeps the one with more valid IDs."""
     bgr = cv2.imread(path)
     if bgr is None:
         raise GridError("Could not open image: {}".format(path))
@@ -443,8 +390,6 @@ def process_image(path, recognizer, on_progress=None):
     grid = _read_grid(bgr, recognizer, on_progress)
     hits = _regex_hits(grid)
 
-    # 180-degree safety net (handoff wants this; it's cheap). Only bother if the
-    # upright read looks poor, to avoid doubling runtime on good photos.
     if hits < 0.6 * EXPECTED_ROWS * EXPECTED_COLS:
         flipped = cv2.rotate(bgr, cv2.ROTATE_180)
         try:
@@ -456,6 +401,90 @@ def process_image(path, recognizer, on_progress=None):
 
     return vocab_flags(grid)
 
+def _a1(r, c):
+    return "{}{}".format(chr(65 + c), r + 1)
+
+def review_and_edit(grid):
+    import tkinter as tk
+    from tkinter import ttk
+    from PIL import Image, ImageTk
+    from collections import Counter
+
+    cells = [c for row in grid for c in row if not c.is_blank]
+    if not cells: 
+        return False
+
+    counts = Counter([c.id for c in cells if c.id])
+    common = [k for k, v in counts.items() if v >= 2]
+
+    root = tk.Tk()
+    root.title("Review and Edit Grid")
+    root.geometry("900x700")
+
+    canvas = tk.Canvas(root)
+    scroll = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+    frame = ttk.Frame(canvas)
+    
+    frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    canvas.create_window((0, 0), window=frame, anchor="nw")
+    canvas.configure(yscrollcommand=scroll.set)
+    
+    canvas.pack(side="left", fill="both", expand=True)
+    scroll.pack(side="right", fill="y")
+
+    tk_imgs = []
+    vars_list = []
+
+    for c in cells:
+        row_bg = "#FFF2CC" if c.flags else None
+        row_frame = tk.Frame(frame, bd=1, relief="solid", bg=row_bg)
+        row_frame.pack(fill="x", padx=5, pady=2)
+        
+        if c.crop is not None:
+            img = Image.fromarray(c.crop).resize((120, 40))
+            tk_img = ImageTk.PhotoImage(img)
+            tk_imgs.append(tk_img)
+            lbl = tk.Label(row_frame, image=tk_img, bg=row_bg)
+            lbl.pack(side="left", padx=5)
+        
+        ref_lbl = tk.Label(row_frame, text=_a1(c.row, c.col), width=4, bg=row_bg)
+        ref_lbl.pack(side="left")
+
+        v_id = tk.StringVar(value=c.id)
+        cb_id = ttk.Combobox(row_frame, textvariable=v_id, values=common, width=12)
+        cb_id.pack(side="left", padx=5)
+
+        v_mod = tk.StringVar(value=c.modifier)
+        ent_mod = tk.Entry(row_frame, textvariable=v_mod, width=10)
+        ent_mod.pack(side="left", padx=5)
+
+        v_type = tk.StringVar(value=c.type)
+        cb_type = ttk.Combobox(row_frame, textvariable=v_type, values=["", "DNA", "RNA"], width=5, state="readonly")
+        cb_type.pack(side="left", padx=5)
+
+        flags_txt = " | ".join(c.flags)
+        f_lbl = tk.Label(row_frame, text=flags_txt, fg="red", bg=row_bg)
+        f_lbl.pack(side="left", padx=10)
+
+        vars_list.append((c, v_id, v_mod, v_type))
+
+    changed = False
+    def on_close():
+        nonlocal changed
+        for c, v_id, v_mod, v_type in vars_list:
+            nid, nmod, ntype = v_id.get().strip(), v_mod.get().strip(), v_type.get().strip()
+            if nid != c.id or nmod != c.modifier or ntype != c.type:
+                c.id, c.modifier, c.type = nid, nmod, ntype
+                c.flags = []
+                changed = True
+        root.destroy()
+
+    btn = tk.Button(root, text="Save & Close", command=on_close, bg="green", fg="white")
+    btn.pack(side="bottom", fill="x", pady=5)
+    root.protocol("WM_DELETE_WINDOW", on_close)
+    
+    root.mainloop()
+    return changed
 
 def write_xlsx(grid, out_path, source_name=""):
     from openpyxl import Workbook
@@ -482,7 +511,6 @@ def write_xlsx(grid, out_path, source_name=""):
                                      "\n- ".join(cell.flags), "freezer_grid")
                 n_flagged += 1
 
-    # sensible column widths / row heights for the two-line cells
     for ci in range(1, EXPECTED_COLS + 1):
         ws.column_dimensions[chr(64 + ci)].width = 14
     for ri in range(1, EXPECTED_ROWS + 1):
@@ -491,11 +519,9 @@ def write_xlsx(grid, out_path, source_name=""):
     wb.save(out_path)
     return n_flagged
 
-
 def _default_out(path):
     base = os.path.splitext(os.path.basename(path))[0]
     return os.path.join(os.path.dirname(os.path.abspath(path)), base + ".xlsx")
-
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
@@ -503,6 +529,7 @@ def main(argv=None):
     ap.add_argument("image", help="path to the phone photo of the box form")
     ap.add_argument("-o", "--out", help="output .xlsx path (default: alongside the image)")
     ap.add_argument("--cpu", action="store_true", help="force CPU even if a GPU is present")
+    ap.add_argument("--review", action="store_true", help="open UI to review and correct reads")
     args = ap.parse_args(argv)
 
     if not os.path.exists(args.image):
@@ -531,7 +558,10 @@ def main(argv=None):
         print("\n        (Nothing was written. This is deliberate: a wrong grid is worse\n"
               "        than no grid.)")
         return 4
-    print()  # end progress line
+    print()  
+
+    if args.review and review_and_edit(grid):
+        grid = vocab_flags(grid)
 
     n_flagged = write_xlsx(grid, out_path, source_name=os.path.basename(args.image))
     n_blank = sum(1 for row in grid for c in row if c.is_blank)
@@ -546,7 +576,6 @@ def main(argv=None):
     else:
         print("  No cells flagged. Still worth a quick eyeball before uploading.")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

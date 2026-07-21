@@ -5,7 +5,7 @@ check and upload to Drive. One photo - one spreadsheet.
 
 The image is read **entirely on this machine**. Nothing about the photo is ever
 sent anywhere. (The one model it uses, EasyOCR, downloads its weights once on the
-first run and then runs locally — including with the internet off.)
+first run and then runs locally - including with the internet off.)
 
 ---
 
@@ -24,11 +24,11 @@ first run and then runs locally — including with the internet off.)
 ### If it refuses
 
 Sometimes it will say it **can't read the grid** and writes nothing. That's on
-purpose — a wrong spreadsheet is worse than none. Almost always it's the photo.
+purpose - a wrong spreadsheet is worse than none. Almost always it's the photo.
 Retake it and it'll work:
 
 - Shoot at a **slight angle**, not straight down. (Straight-on shots wash out one
-  edge and lose grid lines — this is the single most common cause.)
+  edge and lose grid lines - this is the single most common cause.)
 - Fill the frame with the form.
 - Even lighting, no glare, whole form visible.
 
@@ -36,7 +36,7 @@ Retake it and it'll work:
 
 ## What the amber flags mean
 
-Every automated check only **raises a flag** — the tool never silently changes a
+Every automated check only **raises a flag** - the tool never silently changes a
 reading. A cell is highlighted when something looks off:
 
 - the ID doesn't fit the `AAA-####` pattern (e.g. `AG-2`)
@@ -44,7 +44,7 @@ reading. A cell is highlighted when something looks off:
 - the recogniser wasn't confident
 - ink level was borderline (blank, or a very faint entry?)
 - an ID appears once but is one character off an ID that appears several times
-  (aliquots are usually written in runs, so this is often a misread — **often, not
+  (aliquots are usually written in runs, so this is often a misread - **often, not
   always**; you decide)
 
 Empty positions are written as the literal text `(blank)`.
@@ -75,7 +75,7 @@ photo.jpg
 180° rotation is handled: if the upright read yields few valid IDs, it re-reads
 rotated and keeps whichever orientation produces more `AAA-####` matches.
 
-### Grid detection — validated on the 5 supplied photos
+### Grid detection - validated on the 5 supplied photos
 
 | photo | result |
 |-------|--------|
@@ -84,7 +84,7 @@ rotated and keeps whichever orientation produces more `AAA-####` matches.
 | 4, 6 (same straight-on shot, washed-out right edge) | resolves to 10×7 - **correctly refused** |
 
 Key decision baked into the guard: the ruled grid is **pre-printed and always
-10×10** — empty cells are still ruled cells. So *any* detection that isn't 10×10 is
+10×10** - empty cells are still ruled cells. So *any* detection that isn't 10×10 is
 a detection failure, never a genuinely smaller grid. `detect_grid()` refuses in that
 case rather than emit a short sheet. This is the geometry-only defence against a
 "dropped column"; it costs nothing and never rejects a valid grid. If a site ever
@@ -95,7 +95,7 @@ Everything above the OCR line was tested end-to-end against the real photos.
 ### The one thing still unvalidated: OCR accuracy
 
 EasyOCR was **not run** during development (no offline weights available in that
-environment), so per-character accuracy on these block-capital codes is unmeasured —
+environment), so per-character accuracy on these block-capital codes is unmeasured -
 same open question as the old TrOCR plan, but with a recogniser that actually fits
 printed/block text instead of cursive IAM. First real task on a live machine is the
 go/no-go:
@@ -124,14 +124,14 @@ actually displays as two lines in Excel. Same stored value, just visible.
 
 ### Not yet done (from the original TODO)
 
-- `Freezer:` / `Rack:` metadata at the page bottom isn't parsed — only used to name
+- `Freezer:` / `Rack:` metadata at the page bottom isn't parsed - only used to name
   the output file if you wire it in.
 - No `pyproject.toml`. Not needed with the launcher approach; the `.bat`/`.command`
   build a venv and `pip install -r requirements.txt`.
 
 ### If you want a true single-file `.exe` / `.app` later
 
-The launchers install Python + deps into a local `.venv` — that's the simplest
+The launchers install Python + deps into a local `.venv` - that's the simplest
 "double-click" that also stays small. For a self-contained binary the operator can
 run with no Python at all:
 
@@ -141,5 +141,5 @@ pyinstaller --onefile --name freezer_grid main.py
 ```
 
 Expect a large binary (~2 GB, mostly torch) and build it **on the target OS**
-(PyInstaller doesn't cross-compile — build the Windows exe on Windows, the Mac app
+(PyInstaller doesn't cross-compile - build the Windows exe on Windows, the Mac app
 on macOS).

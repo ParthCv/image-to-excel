@@ -29,7 +29,7 @@ if [ -z "$PHOTO" ]; then
   exit 1
 fi
 
-python main.py "$PHOTO"
+python main.py "$PHOTO" --review
 echo ""
 read -n1 -s -p "Press any key to close..."
 echo ""
