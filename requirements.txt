@@ -1,0 +1,6 @@
+# Local, offline-capable. No image ever leaves the machine.
+# easyocr pulls in torch/torchvision/Pillow/scipy automatically.
+easyocr>=1.7.0
+opencv-python-headless>=4.8.0
+numpy>=1.24
+openpyxl>=3.1
