@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 echo "============================================================"
-echo " Freezer Grid - one-time setup"
+echo " Image to Excel - one-time setup"
 echo " This builds a local Python environment and downloads the"
 echo " packages it needs. It can take a few minutes the first time."
 echo "============================================================"
